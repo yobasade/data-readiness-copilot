@@ -1,4 +1,6 @@
+from agent_service import run_readiness_agent
 from datetime import timedelta
+import os
 
 import pandas as pd
 import streamlit as st
@@ -320,9 +322,31 @@ accounts = load_csv(accounts_file, accounts_sample)
 contacts = load_csv(contacts_file, contacts_sample)
 opportunities = load_csv(opportunities_file, opportunities_sample)
 
+remediation_plan = [
+    "Establish a canonical account identifier.",
+    "Resolve duplicate and orphaned records.",
+    "Confirm required field definitions with business stakeholders.",
+    "Re-run validation after remediation.",
+    "Add authenticated enterprise-platform connectors.",
+    "Add AI-assisted field mapping only after the underlying metrics are trusted.",
+]
+
 issues = run_quality_checks(accounts, contacts, opportunities)
 score = calculate_score(issues)
 status = status_for_score(score)
+checks = issues.to_dict(orient="records")
+risks = [
+    check for check in checks if check["severity"] in {"Critical", "High"}
+]
+
+assessment = {
+    "target_use_case": "CRM, analytics, or AI deployment",
+    "readiness_score": score,
+    "readiness_status": status,
+    "checks": checks,
+    "risks": risks,
+    "remediation_plan": remediation_plan,
+}
 
 st.header("Deployment readiness")
 
@@ -367,17 +391,41 @@ else:
 
 st.header("Recommended remediation plan")
 
-recommendations = [
-    "Establish a canonical account identifier.",
-    "Resolve duplicate and orphaned records.",
-    "Confirm required field definitions with business stakeholders.",
-    "Re-run validation after remediation.",
-    "Add authenticated enterprise-platform connectors.",
-    "Add AI-assisted field mapping only after the underlying metrics are trusted.",
-]
-
-for number, recommendation in enumerate(recommendations, start=1):
+for number, recommendation in enumerate(remediation_plan, start=1):
     st.write(f"{number}. {recommendation}")
+
+st.divider()
+st.subheader("Ask the Data Readiness Agent")
+
+user_question = st.text_input(
+    "Ask a question about this assessment",
+    placeholder=(
+        "What are the biggest risks to deploying an AI sales assistant "
+        "on this data?"
+    ),
+)
+
+if st.button("Ask Agent"):
+    if not user_question.strip():
+        st.warning("Enter a question first.")
+    else:
+        with st.spinner("Analyzing the readiness assessment..."):
+            try:
+                answer = run_readiness_agent(
+                    user_question=user_question,
+                    assessment=assessment,
+                )
+            except Exception as error:
+                error_detail = str(error)
+                api_key = os.getenv("OPENAI_API_KEY")
+                if api_key:
+                    error_detail = error_detail.replace(api_key, "[redacted]")
+
+                st.error(f"The agent request failed ({type(error).__name__}).")
+                with st.expander("Technical details"):
+                    st.code(error_detail or "No additional error details provided.")
+            else:
+                st.markdown(answer)
 
 st.header("Source data preview")
 
