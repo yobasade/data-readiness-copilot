@@ -21,7 +21,7 @@ reporting, automation, and AI workflows.
 
 ## Future improvements
 
-The application calculates data-quality metrics deterministically using Python and Pandas. A future AI layer would be used for semantic field mapping, explanation, prioritization, and communication—not for inventing metrics.
+The application calculates data-quality metrics deterministically using Python and Pandas. An AI Agent layer has been added for semantic field mapping, explanation, prioritization, and communication—not for inventing metrics. Below are further integrations that can be applied for enterprise use.
 
     •    Amazon Bedrock integration
     •    Salesforce or enterprise-platform connectors
