@@ -1,5 +1,4 @@
 from agent_service import run_readiness_agent
-from datetime import timedelta
 import os
 
 import pandas as pd
@@ -13,14 +12,17 @@ st.set_page_config(
 
 
 def create_sample_data():
-    """Create synthetic enterprise customer data for the demo."""
-    accounts = pd.DataFrame(
+    """Create a sample flat file for the demo."""
+    return pd.DataFrame(
         [
             {
                 "account_id": "A1001",
                 "account_name": "Acme Wireless",
                 "segment": "Enterprise",
                 "industry": "Telecommunications",
+                "primary_contact_email": "maya@acmewireless.com",
+                "opportunity_amount": 250000,
+                "opportunity_close_date": "2026-12-15",
                 "last_updated": "2025-01-15",
             },
             {
@@ -28,6 +30,9 @@ def create_sample_data():
                 "account_name": "Globex Corporation",
                 "segment": "Enterprise",
                 "industry": "Technology",
+                "primary_contact_email": "leo@globex.com",
+                "opportunity_amount": 125000,
+                "opportunity_close_date": "",
                 "last_updated": "2025-04-15",
             },
             {
@@ -35,6 +40,9 @@ def create_sample_data():
                 "account_name": "Globex Corporation Duplicate",
                 "segment": "Enterprise",
                 "industry": "Technology",
+                "primary_contact_email": "invalid-email",
+                "opportunity_amount": 75000,
+                "opportunity_close_date": "2026-11-30",
                 "last_updated": "2025-04-15",
             },
             {
@@ -42,67 +50,13 @@ def create_sample_data():
                 "account_name": "Initech Communications",
                 "segment": "",
                 "industry": "Telecommunications",
+                "primary_contact_email": "operations@initech.com",
+                "opportunity_amount": 50000,
+                "opportunity_close_date": "2026-10-20",
                 "last_updated": "2023-02-20",
             },
         ]
     )
-
-    contacts = pd.DataFrame(
-        [
-            {
-                "contact_id": "C1001",
-                "account_id": "A1001",
-                "email": "maya@achme.com",
-                "contact_type": "Technical",
-            },
-            {
-                "contact_id": "C1002",
-                "account_id": "A1001",
-                "email": "leo@northstarmedia.com",
-                "contact_type": "Executive",
-            },
-            {
-                "contact_id": "C1003",
-                "account_id": "A9999",
-                "email": "invalid-email",
-                "contact_type": "Technical",
-            },
-            {
-                "contact_id": "C1004",
-                "account_id": "A1003",
-                "email": "",
-                "contact_type": "Operations",
-            },
-        ]
-    )
-
-    opportunities = pd.DataFrame(
-        [
-            {
-                "opportunity_id": "O1001",
-                "account_id": "A1001",
-                "amount": 250000,
-                "stage": "Proposal",
-                "close_date": "2025-06-30",
-            },
-            {
-                "opportunity_id": "O1002",
-                "account_id": "A1002",
-                "amount": 125000,
-                "stage": "Negotiation",
-                "close_date": "",
-            },
-            {
-                "opportunity_id": "O1003",
-                "account_id": "A9999",
-                "amount": 75000,
-                "stage": "Discovery",
-                "close_date": "2025-11-15",
-            },
-        ]
-    )
-
-    return accounts, contacts, opportunities
 
 
 def load_csv(uploaded_file, default_data):
@@ -120,132 +74,102 @@ def load_csv(uploaded_file, default_data):
 def missing_values(df, column):
     """Count null or blank values in a column."""
     if column not in df.columns:
-        return len(df)
+        return 0
 
     values = df[column]
-    missing = values.isna()
-
-    if values.dtype == "object":
-        missing = missing | values.fillna("").astype(str).str.strip().eq("")
-
+    missing = values.isna() | values.astype("string").str.strip().eq("").fillna(False)
     return int(missing.sum())
 
 
-def run_quality_checks(accounts, contacts, opportunities):
-    """Run deterministic data quality checks."""
+def run_quality_checks(data):
+    """Profile the fields present in one uploaded dataset."""
     issues = []
 
-    required_fields = {
-        "accounts": {
-            "data": accounts,
-            "columns": ["account_id", "account_name", "segment"],
-        },
-        "contacts": {
-            "data": contacts,
-            "columns": ["contact_id", "account_id", "email"],
-        },
-        "opportunities": {
-            "data": opportunities,
-            "columns": ["opportunity_id", "account_id", "close_date"],
-        },
-    }
+    if data.empty or len(data.columns) == 0:
+        issues.append(
+            {
+                "severity": "Critical",
+                "category": "Completeness",
+                "dataset": "uploaded data",
+                "issue": "CSV contains no data rows or columns",
+                "count": 0,
+                "recommendation": "Upload a CSV with a header row and at least one data row.",
+            }
+        )
+        return pd.DataFrame(issues)
 
-    for dataset_name, config in required_fields.items():
-        df = config["data"]
-        for column in config["columns"]:
-            count = missing_values(df, column)
-            if count > 0:
-                issues.append(
-                    {
-                        "severity": "High",
-                        "category": "Completeness",
-                        "dataset": dataset_name,
-                        "issue": f"Missing values in {column}",
-                        "count": count,
-                        "recommendation": f"Populate {column} before enabling production workflows.",
-                    }
-                )
+    for column in data.columns:
+        count = missing_values(data, column)
+        if count > 0:
+            issues.append(
+                {
+                    "severity": "High",
+                    "category": "Completeness",
+                    "dataset": "uploaded data",
+                    "issue": f"Missing values in {column}",
+                    "count": count,
+                    "recommendation": f"Review and populate missing values in {column} where required.",
+                }
+            )
 
-    if "account_id" in accounts.columns:
-        duplicate_count = int(accounts["account_id"].duplicated(keep=False).sum())
+    identifier_columns = [
+        column
+        for column in data.columns
+        if column.strip().lower() == "id" or column.strip().lower().endswith("_id")
+    ]
+    for column in identifier_columns:
+        duplicate_count = int(data[column].dropna().duplicated(keep=False).sum())
         if duplicate_count > 0:
             issues.append(
                 {
                     "severity": "Critical",
                     "category": "Uniqueness",
-                    "dataset": "accounts",
-                    "issue": "Duplicate account IDs",
+                    "dataset": "uploaded data",
+                    "issue": f"Duplicate identifiers in {column}",
                     "count": duplicate_count,
-                    "recommendation": "Establish a canonical account ID and merge duplicates.",
+                    "recommendation": f"Make values in {column} unique or define a canonical identifier.",
                 }
             )
 
-    if "account_id" in accounts.columns:
-        account_ids = set(accounts["account_id"].dropna().astype(str))
-
-        for dataset_name, df in [
-            ("contacts", contacts),
-            ("opportunities", opportunities),
-        ]:
-            if "account_id" not in df.columns:
-                continue
-
-            child_ids = df["account_id"].fillna("").astype(str)
-            orphaned_count = int((~child_ids.isin(account_ids)).sum())
-            if orphaned_count > 0:
-                issues.append(
-                    {
-                        "severity": "Critical",
-                        "category": "Referential Integrity",
-                        "dataset": dataset_name,
-                        "issue": "Records reference non-existent accounts",
-                        "count": orphaned_count,
-                        "recommendation": "Resolve orphaned records before account level reporting.",
-                    }
-                )
-
-    if "email" in contacts.columns:
-        email_pattern = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
-        invalid_emails = ~contacts["email"].fillna("").astype(str).str.match(email_pattern)
-        invalid_count = int(invalid_emails.sum())
-
+    email_columns = [column for column in data.columns if "email" in column.lower()]
+    email_pattern = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+    for column in email_columns:
+        present_emails = data[column].dropna().astype(str).str.strip()
+        present_emails = present_emails[present_emails.ne("")]
+        invalid_count = int((~present_emails.str.match(email_pattern)).sum())
         if invalid_count > 0:
             issues.append(
                 {
                     "severity": "Medium",
                     "category": "Validity",
-                    "dataset": "contacts",
-                    "issue": "Invalid or missing email addresses",
+                    "dataset": "uploaded data",
+                    "issue": f"Invalid email addresses in {column}",
                     "count": invalid_count,
-                    "recommendation": "Validate contact email addresses before engagement workflows.",
+                    "recommendation": f"Validate email addresses in {column} before engagement workflows.",
                 }
             )
 
-    close_date_count = missing_values(opportunities, "close_date")
-    if close_date_count > 0:
-        issues.append(
-            {
-                "severity": "Medium",
-                "category": "Completeness",
-                "dataset": "opportunities",
-                "issue": "Opportunities missing close dates",
-                "count": close_date_count,
-                "recommendation": "Require close dates for forecasting and pipeline reporting.",
-            }
-        )
+    freshness_columns = {
+        "last_updated",
+        "updated_at",
+        "updated_on",
+        "modified_at",
+        "modified_on",
+    }
+    for column in data.columns:
+        if column.strip().lower() not in freshness_columns:
+            continue
 
-    if "last_updated" in accounts.columns:
-        updated_dates = pd.to_datetime(accounts["last_updated"], errors="coerce")
-        stale_cutoff = pd.Timestamp.today() - pd.Timedelta(days=365)
+        updated_dates = pd.to_datetime(data[column], errors="coerce", utc=True)
+        stale_cutoff = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=365)
         stale_count = int((updated_dates < stale_cutoff).sum())
-
         if stale_count > 0:
             issues.append(
                 {
                     "severity": "Medium",
                     "category": "Freshness",
-                    "dataset": "accounts",
-                    "issue": "Account records are more than one year old",
+                    "dataset": "uploaded data",
+                    "issue": f"Records in {column} are more than one year old",
                     "count": stale_count,
                     "recommendation": "Confirm the source refresh process and monitor data freshness.",
                 }
@@ -298,40 +222,26 @@ st.info(
     """
 )
 
-accounts_sample, contacts_sample, opportunities_sample = create_sample_data()
+sample_data = create_sample_data()
 
 with st.sidebar:
-    st.header("Data sources")
-
-    accounts_file = st.file_uploader(
-        "Upload accounts CSV",
+    st.header("Data source")
+    uploaded_file = st.file_uploader(
+        "Upload a CSV file",
         type=["csv"],
     )
 
-    contacts_file = st.file_uploader(
-        "Upload contacts CSV",
-        type=["csv"],
-    )
-
-    opportunities_file = st.file_uploader(
-        "Upload opportunities CSV",
-        type=["csv"],
-    )
-
-accounts = load_csv(accounts_file, accounts_sample)
-contacts = load_csv(contacts_file, contacts_sample)
-opportunities = load_csv(opportunities_file, opportunities_sample)
+data = load_csv(uploaded_file, sample_data)
 
 remediation_plan = [
-    "Establish a canonical account identifier.",
-    "Resolve duplicate and orphaned records.",
-    "Confirm required field definitions with business stakeholders.",
+    "Review critical duplicate identifiers and establish canonical IDs.",
+    "Resolve missing values in fields required for the target workflow.",
+    "Correct invalid email addresses before engagement workflows.",
+    "Refresh stale records and confirm the source update process.",
     "Re-run validation after remediation.",
-    "Add authenticated enterprise-platform connectors.",
-    "Add AI-assisted field mapping only after the underlying metrics are trusted.",
 ]
 
-issues = run_quality_checks(accounts, contacts, opportunities)
+issues = run_quality_checks(data)
 score = calculate_score(issues)
 status = status_for_score(score)
 checks = issues.to_dict(orient="records")
@@ -381,8 +291,7 @@ else:
     highest_priority = issues.iloc[0]
     st.write(
         f"""
-        The assessment reviewed {len(accounts)} accounts,
-        {len(contacts)} contacts, and {len(opportunities)} opportunities.
+        The assessment reviewed {len(data)} rows and {len(data.columns)} columns.
 
         The highest-priority finding is **{highest_priority["issue"]}**.
         The recommended next step is to **{highest_priority["recommendation"]}**
@@ -428,23 +337,7 @@ if st.button("Ask Agent"):
                 st.markdown(answer)
 
 st.header("Source data preview")
-
-accounts_tab, contacts_tab, opportunities_tab = st.tabs(
-    ["Accounts", "Contacts", "Opportunities"]
-)
-
-with accounts_tab:
-    st.dataframe(accounts, use_container_width=True, hide_index=True)
-
-with contacts_tab:
-    st.dataframe(contacts, use_container_width=True, hide_index=True)
-
-with opportunities_tab:
-    st.dataframe(
-        opportunities,
-        use_container_width=True,
-        hide_index=True,
-    )
+st.dataframe(data, use_container_width=True, hide_index=True)
 
 st.caption(
     """
@@ -468,8 +361,7 @@ st.code(
     """
 Python calculates:
 - Missing values
-- Duplicate IDs
-- Orphaned records
+- Duplicate identifiers
 - Invalid emails
 - Stale records
 
@@ -488,5 +380,3 @@ st.warning(
     interpret trusted findings produced by deterministic code.
     """
 )
-
-st.divider()
