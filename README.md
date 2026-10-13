@@ -11,7 +11,8 @@ reporting, automation, and AI workflows.
 
 ## What the prototype does
 
-- Loads account, contact, and opportunity data
+- Loads one CSV file with multiple data columns
+- Profiles the columns provided in the uploaded CSV
 - Runs deterministic data-quality checks
 - Calculates a deployment-readiness score
 - Identifies high-priority risks
@@ -35,9 +36,9 @@ The application calculates data-quality metrics deterministically using Python a
 ## Architecture
 
 ```text
-CSV data
+Single CSV upload
    ↓
-Pandas data profiling
+Column-aware Pandas profiling
    ↓
 Deterministic data-quality checks
    ↓
